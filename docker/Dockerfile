@@ -65,7 +65,9 @@ ENV PATH="/workspace/miniconda3/bin:${PATH}"
 RUN conda init bash
 
 # Create and activate conda environment
-RUN conda create -n direct3d-s2 python=3.10 && echo "source activate direct3d-s2" > ~/.bashrc
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
+    conda create -n direct3d-s2 python=3.10 -y && echo "source activate direct3d-s2" > ~/.bashrc
 ENV PATH /workspace/miniconda3/envs/direct3d-s2/bin:$PATH
 
 # Set conda to always auto-approve
@@ -84,7 +86,12 @@ RUN git clone https://github.com/DreamTechAI/Direct3D-S2.git
 WORKDIR /workspace/Direct3D-S2
 
 # Install Direct3D-S2 dependencies
-RUN pip install -r requirements.txt
+# Install everything except voxelize and flash-attn
+RUN pip install $(grep -v -e 'third_party/voxelize' -e 'flash-attn' requirements.txt | tr '\n' ' ')
+
+# Install flash-attn and voxelize separately (both need torch visible at build time)
+RUN pip install --no-build-isolation flash-attn
+RUN pip install --no-build-isolation ./third_party/voxelize/
 
 # Install additional dependencies
 RUN pip install timm kornia gradio
