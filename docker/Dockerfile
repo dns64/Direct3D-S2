@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Direct3D-S2 Docker Environment
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
@@ -107,25 +108,31 @@ RUN echo "conda activate direct3d-s2" >> ~/.bashrc
 SHELL ["/bin/bash", "--login", "-c"]
 
 # Create test script to check installation
-RUN echo '#!/bin/bash\n\
-echo "🧪 Testing Direct3D-S2 installation..."\n\
-python -c "import torch; print(f\"✅ PyTorch {torch.__version__} with CUDA {torch.version.cuda}\")" || echo "❌ PyTorch import failed"\n\
-python -c "import direct3d_s2; print(\"✅ Direct3D-S2 imported successfully\")" || echo "❌ Direct3D-S2 import failed"\n\
-python -c "import torchsparse; print(\"✅ TorchSparse imported successfully\")" || echo "⚠️  TorchSparse not available - some features may be limited"\n\
-python -c "import timm, kornia, gradio; print(\"✅ Additional dependencies imported successfully\")" || echo "❌ Some dependencies missing"\n\
-echo "🎉 Installation check complete!"' > /workspace/test_installation.sh && chmod +x /workspace/test_installation.sh
+RUN cat <<'SCRIPT' > /workspace/test_installation.sh
+#!/bin/bash
+echo "Testing Direct3D-S2 installation..."
+python -c "import torch; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')" || echo "PyTorch import failed"
+python -c "import direct3d_s2; print('Direct3D-S2 imported successfully')" || echo "Direct3D-S2 import failed"
+python -c "import torchsparse; print('TorchSparse imported successfully')" || echo "TorchSparse not available - some features may be limited"
+python -c "import timm, kornia, gradio; print('Additional dependencies imported successfully')" || echo "Some dependencies missing"
+echo "Installation check complete!"
+SCRIPT
+RUN chmod +x /workspace/test_installation.sh
 
 # Create helper script for manual torchsparse compilation if needed
-RUN echo '#!/bin/bash\n\
-echo "🔧 Manual TorchSparse compilation..."\n\
-cd /workspace\n\
-rm -rf torchsparse\n\
-git clone https://github.com/mit-han-lab/torchsparse.git\n\
-cd torchsparse\n\
-export MAX_JOBS=1\n\
-export TORCH_CUDA_ARCH_LIST="6.0;6.1;7.0;7.5;8.0;8.6;8.9;9.0"\n\
-python setup.py clean --all\n\
-python setup.py install' > /workspace/compile_torchsparse.sh && chmod +x /workspace/compile_torchsparse.sh
+RUN cat <<'SCRIPT' > /workspace/compile_torchsparse.sh
+#!/bin/bash
+echo "Manual TorchSparse compilation..."
+cd /workspace
+rm -rf torchsparse
+git clone https://github.com/mit-han-lab/torchsparse.git
+cd torchsparse
+export MAX_JOBS=1
+export TORCH_CUDA_ARCH_LIST="6.0;6.1;7.0;7.5;8.0;8.6;8.9;9.0"
+python setup.py clean --all
+python setup.py install
+SCRIPT
+RUN chmod +x /workspace/compile_torchsparse.sh
 
 # Set working directory to Direct3D-S2 project
 WORKDIR /workspace/Direct3D-S2
