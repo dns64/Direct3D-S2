@@ -49,6 +49,7 @@ ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 ENV TORCH_CUDA_ARCH_LIST="6.0;6.1;7.0;7.5;8.0;8.6;8.9;9.0"
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Limit parallel compilation to avoid OOM
 ENV MAX_JOBS=2

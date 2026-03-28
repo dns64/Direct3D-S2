@@ -35,6 +35,7 @@ class Direct3DS2Pipeline(object):
                  refiner_1024=None,
                  sparse_scheduler_1024=None,
                  dtype=torch.float16,
+                 low_vram=False,
         ):
         self.dense_vae = dense_vae
         self.dense_dit = dense_dit
@@ -50,22 +51,25 @@ class Direct3DS2Pipeline(object):
         self.sparse_scheduler_512 = sparse_scheduler_512
         self.sparse_scheduler_1024 = sparse_scheduler_1024
         self.dtype = dtype
+        self.low_vram = low_vram
     
     def to(self, device):
         self.device = torch.device(device)
+        # Only load first stage models; others will be loaded on demand
         self.dense_vae.to(device)
         self.dense_dit.to(device)
-        self.sparse_vae_512.to(device)
-        self.sparse_dit_512.to(device)
-        if self.sparse_vae_1024 is not None:
-            self.sparse_vae_1024.to(device)
-        if self.sparse_dit_1024 is not None:
-            self.sparse_dit_1024.to(device)
-        self.refiner.to(device)
-        if self.refiner_1024 is not None:
-            self.refiner_1024.to(device)
         self.dense_image_encoder.to(device)
-        self.sparse_image_encoder.to(device)
+
+    def _offload(self, *models):
+        for m in models:
+            if m is not None:
+                m.to("cpu")
+        torch.cuda.empty_cache()
+
+    def _load(self, *models):
+        for m in models:
+            if m is not None:
+                m.to(self.device)
 
     @classmethod
     def from_pretrained(cls, pipeline_path, subfolder="direct3d-s2-v-1-1", low_vram=False):
@@ -147,10 +151,12 @@ class Direct3DS2Pipeline(object):
             sparse_dit_1024.load_state_dict(state_dict_sparse_1024["dit"], strict=True)
             sparse_dit_1024.eval()
 
-        state_dict_refiner = torch.load(model_refiner_path, map_location='cpu', weights_only=True)
-        refiner = instantiate_from_config(cfg.refiner)
-        refiner.load_state_dict(state_dict_refiner["refiner"], strict=True)
-        refiner.eval()
+        refiner = None
+        if not low_vram:
+            state_dict_refiner = torch.load(model_refiner_path, map_location='cpu', weights_only=True)
+            refiner = instantiate_from_config(cfg.refiner)
+            refiner.load_state_dict(state_dict_refiner["refiner"], strict=True)
+            refiner.eval()
 
         if not low_vram:
             state_dict_refiner_1024 = torch.load(model_refiner_1024_path, map_location='cpu', weights_only=True)
@@ -180,6 +186,7 @@ class Direct3DS2Pipeline(object):
             sparse_scheduler_1024=sparse_scheduler_1024,
             refiner=refiner,
             refiner_1024=refiner_1024,
+            low_vram=low_vram,
         )
 
     def preprocess(self, image):
@@ -313,8 +320,17 @@ class Direct3DS2Pipeline(object):
         outputs = vae.decode_mesh(**decoder_inputs)
 
         if remove_interior:
-            del latents, noise_pred, noise_pred_cond, noise_pred_uncond, x_input, cond, uncond
+            del latents, noise_pred, noise_pred_cond, x_input, cond
+            try:
+                del noise_pred_uncond, uncond
+            except NameError:
+                pass
+            self._offload(vae, dit, conditioner)
             torch.cuda.empty_cache()
+            if mode == 'sparse512':
+                self._load(self.refiner)
+            elif mode == 'sparse1024':
+                self._load(self.refiner_1024)
             if mode == 'sparse512':
                 outputs = self.refiner.run(*outputs, mc_threshold=mc_threshold*2.0)
             elif mode == 'sparse1024':
@@ -341,33 +357,38 @@ class Direct3DS2Pipeline(object):
 
         image = self.prepare_image(image)
 
+        # Stage 1: Dense inference
         latent_index = self.inference(image, self.dense_vae, self.dense_dit, self.dense_image_encoder,
                                     self.dense_scheduler, generator=generator, mode='dense', mc_threshold=0.1, **dense_sampler_params)[0]
-        
+
         latent_index = sort_block(latent_index, self.sparse_dit_512.selection_block_size)
 
-        torch.cuda.empty_cache()
+        self._offload(self.dense_vae, self.dense_dit, self.dense_image_encoder)
+        self._load(self.sparse_vae_512, self.sparse_dit_512, self.sparse_image_encoder)
 
-        mesh = self.inference(image, self.sparse_vae_512, self.sparse_dit_512, 
-                                self.sparse_image_encoder, self.sparse_scheduler_512, 
-                                generator=generator, mode='sparse512', 
-                                mc_threshold=mc_threshold, latent_index=latent_index, 
-                                remove_interior=True, **sparse_512_sampler_params)[0]
+        # Stage 2: Sparse 512 inference (skip refiner in low-vram mode — it needs ~14GB alone)
+        use_refiner = remove_interior and not self.low_vram
+        mesh = self.inference(image, self.sparse_vae_512, self.sparse_dit_512,
+                                self.sparse_image_encoder, self.sparse_scheduler_512,
+                                generator=generator, mode='sparse512',
+                                mc_threshold=mc_threshold, latent_index=latent_index,
+                                remove_interior=use_refiner, **sparse_512_sampler_params)[0]
 
         if sdf_resolution == 1024:
             del latent_index
+            self._load(self.sparse_vae_1024, self.sparse_dit_1024, self.sparse_image_encoder)
             torch.cuda.empty_cache()
             mesh = normalize_mesh(mesh)
             latent_index = mesh2index(mesh, size=1024, factor=8)
             latent_index = sort_block(latent_index, self.sparse_dit_1024.selection_block_size)
             print(f"number of latent tokens: {len(latent_index)}")
 
-            mesh = self.inference(image, self.sparse_vae_1024, self.sparse_dit_1024, 
-                                self.sparse_image_encoder, self.sparse_scheduler_1024, 
-                                generator=generator, mode='sparse1024', 
-                                mc_threshold=mc_threshold, latent_index=latent_index, 
+            mesh = self.inference(image, self.sparse_vae_1024, self.sparse_dit_1024,
+                                self.sparse_image_encoder, self.sparse_scheduler_1024,
+                                generator=generator, mode='sparse1024',
+                                mc_threshold=mc_threshold, latent_index=latent_index,
                                 remove_interior=remove_interior, **sparse_1024_sampler_params)[0]
-            
+
         if remesh:
             import trimesh
             from direct3d_s2.utils import postprocess_mesh
@@ -379,6 +400,12 @@ class Direct3DS2Pipeline(object):
                 verbose=True,
             )
             mesh = trimesh.Trimesh(filled_mesh[0], filled_mesh[1])
+
+        # Restore first stage models to GPU for next request
+        self._offload(self.refiner, self.refiner_1024,
+                      self.sparse_vae_512, self.sparse_dit_512, self.sparse_image_encoder,
+                      self.sparse_vae_1024, self.sparse_dit_1024)
+        self._load(self.dense_vae, self.dense_dit, self.dense_image_encoder)
 
         outputs = {"mesh": mesh}
 
