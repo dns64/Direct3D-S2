@@ -101,7 +101,7 @@ RUN pip install --no-build-isolation .
 RUN pip install timm kornia gradio
 
 # Try to install torchsparse using the official installer (fallback to manual compilation)
-RUN git clone https://github.com/mit-han-lab/torchsparse.git /workspace/torchsparse && cd /workspace/torchsparse && pip install --no-build-isolation .
+RUN git clone https://github.com/mit-han-lab/torchsparse.git /workspace/torchsparse && cd /workspace/torchsparse && pip install --no-build-isolation . && rm -rf /workspace/torchsparse
 
 # Download model weights from HuggingFace so the image is self-contained
 RUN pip install huggingface_hub && python -c "\
@@ -153,6 +153,7 @@ export MAX_JOBS=1
 export TORCH_CUDA_ARCH_LIST="6.0;6.1;7.0;7.5;8.0;8.6;8.9;9.0"
 python setup.py clean --all
 python setup.py install
+cd /workspace && rm -rf torchsparse
 SCRIPT
 RUN chmod +x /workspace/compile_torchsparse.sh
 
