@@ -83,7 +83,7 @@ RUN conda install -c conda-forge libstdcxx-ng -y
 RUN pip install torch==2.5.1 torchvision==0.20.1 xformers --index-url https://download.pytorch.org/whl/cu121
 
 # Clone Direct3D-S2 repository
-RUN git clone https://github.com/DreamTechAI/Direct3D-S2.git
+RUN git clone https://github.com/dns64/Direct3D-S2.git
 WORKDIR /workspace/Direct3D-S2
 
 # Install Direct3D-S2 dependencies
@@ -93,6 +93,9 @@ RUN pip install $(grep -v -e 'third_party/voxelize' -e 'flash-attn' requirements
 # Install flash-attn and voxelize separately (both need torch visible at build time)
 RUN pip install --no-build-isolation flash-attn
 RUN pip install --no-build-isolation ./third_party/voxelize/
+
+# Install Direct3D-S2 package itself
+RUN pip install --no-build-isolation .
 
 # Install additional dependencies
 RUN pip install timm kornia gradio
@@ -110,6 +113,8 @@ SHELL ["/bin/bash", "--login", "-c"]
 # Create test script to check installation
 RUN cat <<'SCRIPT' > /workspace/test_installation.sh
 #!/bin/bash
+source /workspace/miniconda3/etc/profile.d/conda.sh
+conda activate direct3d-s2
 echo "Testing Direct3D-S2 installation..."
 python -c "import torch; print(f'PyTorch {torch.__version__} with CUDA {torch.version.cuda}')" || echo "PyTorch import failed"
 python -c "import direct3d_s2; print('Direct3D-S2 imported successfully')" || echo "Direct3D-S2 import failed"
@@ -122,6 +127,8 @@ RUN chmod +x /workspace/test_installation.sh
 # Create helper script for manual torchsparse compilation if needed
 RUN cat <<'SCRIPT' > /workspace/compile_torchsparse.sh
 #!/bin/bash
+source /workspace/miniconda3/etc/profile.d/conda.sh
+conda activate direct3d-s2
 echo "Manual TorchSparse compilation..."
 cd /workspace
 rm -rf torchsparse
