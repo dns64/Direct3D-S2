@@ -86,7 +86,11 @@ def image2mesh(
 #  UI LAYOUT  ▸  minimal glassmorphism, keyboard-first workflow
 # -----------------------------------------------------------------------------
 
-pipe = Direct3DS2Pipeline.from_pretrained('wushuang98/Direct3D-S2', subfolder="direct3d-s2-v-1-1")
+LOCAL_WEIGHTS = '/workspace/models/direct3d-s2-v-1-1'
+if os.path.isdir(LOCAL_WEIGHTS):
+    pipe = Direct3DS2Pipeline.from_pretrained(LOCAL_WEIGHTS)
+else:
+    pipe = Direct3DS2Pipeline.from_pretrained('wushuang98/Direct3D-S2', subfolder="direct3d-s2-v-1-1")
 pipe.to("cuda:0")
 
 with gr.Blocks(theme=Glass(), css="""

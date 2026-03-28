@@ -103,6 +103,14 @@ RUN pip install timm kornia gradio
 # Try to install torchsparse using the official installer (fallback to manual compilation)
 RUN git clone https://github.com/mit-han-lab/torchsparse.git /workspace/torchsparse && cd /workspace/torchsparse && pip install --no-build-isolation .
 
+# Download model weights from HuggingFace so the image is self-contained
+RUN pip install huggingface_hub && python -c "\
+from huggingface_hub import hf_hub_download; \
+import os; \
+os.makedirs('/workspace/models/direct3d-s2-v-1-1', exist_ok=True); \
+[hf_hub_download('wushuang98/Direct3D-S2', subfolder='direct3d-s2-v-1-1', filename=f, repo_type='model', local_dir='/workspace/models') \
+ for f in ['config.yaml', 'model_dense.ckpt', 'model_sparse_512.ckpt', 'model_sparse_1024.ckpt', 'model_refiner.ckpt', 'model_refiner_1024.ckpt']]"
+
 # Set global library paths to ensure proper linking at runtime
 ENV LD_LIBRARY_PATH="/workspace/miniconda3/envs/direct3d-s2/lib:${LD_LIBRARY_PATH}"
 
