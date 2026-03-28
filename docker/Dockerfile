@@ -111,6 +111,13 @@ os.makedirs('/workspace/models/direct3d-s2-v-1-1', exist_ok=True); \
 [hf_hub_download('wushuang98/Direct3D-S2', subfolder='direct3d-s2-v-1-1', filename=f, repo_type='model', local_dir='/workspace/models') \
  for f in ['config.yaml', 'model_dense.ckpt', 'model_sparse_512.ckpt', 'model_sparse_1024.ckpt', 'model_refiner.ckpt', 'model_refiner_1024.ckpt']]"
 
+# Pre-download BiRefNet (background removal model)
+RUN python -c "from transformers import AutoModelForImageSegmentation; \
+AutoModelForImageSegmentation.from_pretrained('ZhengPeng7/BiRefNet', trust_remote_code=True)"
+
+# Pre-download DINOv2 (image encoder)
+RUN python -c "import torch; torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', pretrained=True)"
+
 # Set global library paths to ensure proper linking at runtime
 ENV LD_LIBRARY_PATH="/workspace/miniconda3/envs/direct3d-s2/lib:${LD_LIBRARY_PATH}"
 
