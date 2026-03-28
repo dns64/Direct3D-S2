@@ -101,7 +101,7 @@ RUN pip install --no-build-isolation .
 RUN pip install timm kornia gradio
 
 # Try to install torchsparse using the official installer (fallback to manual compilation)
-RUN git clone https://github.com/mit-han-lab/torchsparse.git /workspace/torchsparse && cd /workspace/torchsparse && python -m pip install . || echo "❌ TorchSparse installation failed completely. Direct3D-S2 may work with limited functionality."
+RUN git clone https://github.com/mit-han-lab/torchsparse.git /workspace/torchsparse && cd /workspace/torchsparse && pip install --no-build-isolation .
 
 # Set global library paths to ensure proper linking at runtime
 ENV LD_LIBRARY_PATH="/workspace/miniconda3/envs/direct3d-s2/lib:${LD_LIBRARY_PATH}"
