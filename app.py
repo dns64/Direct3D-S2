@@ -86,12 +86,7 @@ def image2mesh(
 #  UI LAYOUT  ▸  minimal glassmorphism, keyboard-first workflow
 # -----------------------------------------------------------------------------
 
-LOCAL_WEIGHTS = '/workspace/models/direct3d-s2-v-1-1'
-if os.path.isdir(LOCAL_WEIGHTS):
-    pipe = Direct3DS2Pipeline.from_pretrained(LOCAL_WEIGHTS)
-else:
-    pipe = Direct3DS2Pipeline.from_pretrained('wushuang98/Direct3D-S2', subfolder="direct3d-s2-v-1-1")
-pipe.to("cuda:0")
+pipe = None
 
 with gr.Blocks(theme=Glass(), css="""
 :root { --header-height:64px }
@@ -193,6 +188,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cached_dir", type=str, default="outputs/web")
     parser.add_argument("--share", action="store_true", help="Create a public Gradio link")
+    parser.add_argument("--low-vram", action="store_true", help="Skip 1024 models to save ~3-4GB VRAM")
     args = parser.parse_args()
+
+    LOCAL_WEIGHTS = '/workspace/models/direct3d-s2-v-1-1'
+    if os.path.isdir(LOCAL_WEIGHTS):
+        pipe = Direct3DS2Pipeline.from_pretrained(LOCAL_WEIGHTS, low_vram=args.low_vram)
+    else:
+        pipe = Direct3DS2Pipeline.from_pretrained('wushuang98/Direct3D-S2', subfolder="direct3d-s2-v-1-1", low_vram=args.low_vram)
+    pipe.to("cuda:0")
 
     demo.queue().launch(share=args.share, allowed_paths=[args.cached_dir], server_name="0.0.0.0", server_port=7860)

@@ -21,19 +21,19 @@ from direct3d_s2.utils import (
 class Direct3DS2Pipeline(object):
 
     def __init__(self, 
-                 dense_vae, 
+                 dense_vae,
                  dense_dit,
                  sparse_vae_512,
                  sparse_dit_512,
-                 sparse_vae_1024,
-                 sparse_dit_1024,
                  refiner,
-                 refiner_1024,
                  dense_image_encoder,
                  sparse_image_encoder,
                  dense_scheduler,
                  sparse_scheduler_512,
-                 sparse_scheduler_1024,
+                 sparse_vae_1024=None,
+                 sparse_dit_1024=None,
+                 refiner_1024=None,
+                 sparse_scheduler_1024=None,
                  dtype=torch.float16,
         ):
         self.dense_vae = dense_vae
@@ -57,16 +57,19 @@ class Direct3DS2Pipeline(object):
         self.dense_dit.to(device)
         self.sparse_vae_512.to(device)
         self.sparse_dit_512.to(device)
-        self.sparse_vae_1024.to(device)
-        self.sparse_dit_1024.to(device)
+        if self.sparse_vae_1024 is not None:
+            self.sparse_vae_1024.to(device)
+        if self.sparse_dit_1024 is not None:
+            self.sparse_dit_1024.to(device)
         self.refiner.to(device)
-        self.refiner_1024.to(device)
+        if self.refiner_1024 is not None:
+            self.refiner_1024.to(device)
         self.dense_image_encoder.to(device)
         self.sparse_image_encoder.to(device)
 
     @classmethod
-    def from_pretrained(cls, pipeline_path, subfolder="direct3d-s2-v-1-1"):
-        
+    def from_pretrained(cls, pipeline_path, subfolder="direct3d-s2-v-1-1", low_vram=False):
+
         if os.path.isdir(pipeline_path):
             config_path = os.path.join(pipeline_path, 'config.yaml')
             model_dense_path = os.path.join(pipeline_path, 'model_dense.ckpt')
@@ -130,30 +133,38 @@ class Direct3DS2Pipeline(object):
         sparse_dit_512.load_state_dict(state_dict_sparse_512["dit"], strict=True)
         sparse_dit_512.eval()
 
-        state_dict_sparse_1024 = torch.load(model_sparse_1024_path, map_location='cpu', weights_only=True)
-        sparse_vae_1024 = instantiate_from_config(cfg.sparse_vae_1024)
-        sparse_vae_1024.load_state_dict(state_dict_sparse_1024["vae"], strict=True)
-        sparse_vae_1024.eval()
-        sparse_dit_1024 = instantiate_from_config(cfg.sparse_dit_1024)
-        sparse_dit_1024.load_state_dict(state_dict_sparse_1024["dit"], strict=True)
-        sparse_dit_1024.eval()
+        sparse_vae_1024 = None
+        sparse_dit_1024 = None
+        refiner_1024 = None
+        sparse_scheduler_1024 = None
+
+        if not low_vram:
+            state_dict_sparse_1024 = torch.load(model_sparse_1024_path, map_location='cpu', weights_only=True)
+            sparse_vae_1024 = instantiate_from_config(cfg.sparse_vae_1024)
+            sparse_vae_1024.load_state_dict(state_dict_sparse_1024["vae"], strict=True)
+            sparse_vae_1024.eval()
+            sparse_dit_1024 = instantiate_from_config(cfg.sparse_dit_1024)
+            sparse_dit_1024.load_state_dict(state_dict_sparse_1024["dit"], strict=True)
+            sparse_dit_1024.eval()
 
         state_dict_refiner = torch.load(model_refiner_path, map_location='cpu', weights_only=True)
         refiner = instantiate_from_config(cfg.refiner)
         refiner.load_state_dict(state_dict_refiner["refiner"], strict=True)
         refiner.eval()
 
-        state_dict_refiner_1024 = torch.load(model_refiner_1024_path, map_location='cpu', weights_only=True)
-        refiner_1024 = instantiate_from_config(cfg.refiner_1024)
-        refiner_1024.load_state_dict(state_dict_refiner_1024["refiner"], strict=True)
-        refiner_1024.eval()
+        if not low_vram:
+            state_dict_refiner_1024 = torch.load(model_refiner_1024_path, map_location='cpu', weights_only=True)
+            refiner_1024 = instantiate_from_config(cfg.refiner_1024)
+            refiner_1024.load_state_dict(state_dict_refiner_1024["refiner"], strict=True)
+            refiner_1024.eval()
 
         dense_image_encoder = instantiate_from_config(cfg.dense_image_encoder)
         sparse_image_encoder = instantiate_from_config(cfg.sparse_image_encoder)
 
         dense_scheduler = instantiate_from_config(cfg.dense_scheduler)
         sparse_scheduler_512 = instantiate_from_config(cfg.sparse_scheduler_512)
-        sparse_scheduler_1024 = instantiate_from_config(cfg.sparse_scheduler_1024)
+        if not low_vram:
+            sparse_scheduler_1024 = instantiate_from_config(cfg.sparse_scheduler_1024)
 
         return cls(
             dense_vae=dense_vae,
@@ -325,8 +336,11 @@ class Direct3DS2Pipeline(object):
         mc_threshold: float = 0.2,
         remove_interior: bool = True):
 
+        if sdf_resolution == 1024 and self.sparse_vae_1024 is None:
+            raise RuntimeError("1024 resolution is not available in low-vram mode. Use 512 instead.")
+
         image = self.prepare_image(image)
-        
+
         latent_index = self.inference(image, self.dense_vae, self.dense_dit, self.dense_image_encoder,
                                     self.dense_scheduler, generator=generator, mode='dense', mc_threshold=0.1, **dense_sampler_params)[0]
         
