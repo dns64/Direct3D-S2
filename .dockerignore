@@ -1,0 +1,6 @@
+.git
+outputs
+docker
+__pycache__
+*.pyc
+*.egg-info

@@ -83,25 +83,23 @@ RUN conda install -c conda-forge libstdcxx-ng -y
 # Install PyTorch with CUDA 12.1 support
 RUN pip install torch==2.5.1 torchvision==0.20.1 xformers --index-url https://download.pytorch.org/whl/cu121
 
-# Clone Direct3D-S2 repository
-RUN git clone https://github.com/dns64/Direct3D-S2.git
+# Copy only files needed for dependency installation (cached unless these change)
+COPY requirements.txt /workspace/Direct3D-S2/requirements.txt
+COPY third_party /workspace/Direct3D-S2/third_party
+
 WORKDIR /workspace/Direct3D-S2
 
-# Install Direct3D-S2 dependencies
-# Install everything except voxelize and flash-attn
+# Install Direct3D-S2 dependencies (everything except voxelize and flash-attn)
 RUN pip install $(grep -v -e 'third_party/voxelize' -e 'flash-attn' requirements.txt | tr '\n' ' ')
 
 # Install flash-attn and voxelize separately (both need torch visible at build time)
 RUN pip install --no-build-isolation flash-attn
 RUN pip install --no-build-isolation ./third_party/voxelize/
 
-# Install Direct3D-S2 package itself
-RUN pip install --no-build-isolation .
-
 # Install additional dependencies
 RUN pip install timm kornia gradio
 
-# Try to install torchsparse using the official installer (fallback to manual compilation)
+# Install torchsparse with CUDA support
 RUN git clone https://github.com/mit-han-lab/torchsparse.git /workspace/torchsparse && cd /workspace/torchsparse && FORCE_CUDA=1 pip install --no-build-isolation . && rm -rf /workspace/torchsparse
 
 # Download model weights from HuggingFace so the image is self-contained
@@ -118,6 +116,12 @@ AutoModelForImageSegmentation.from_pretrained('ZhengPeng7/BiRefNet', trust_remot
 
 # Pre-download DINOv2 (image encoder)
 RUN python -c "import torch; torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14_reg', pretrained=True)"
+
+# Now copy the full repo (only this layer invalidates on code changes)
+COPY . /workspace/Direct3D-S2/
+
+# Install Direct3D-S2 package itself
+RUN pip install --no-build-isolation .
 
 # Set global library paths to ensure proper linking at runtime
 ENV LD_LIBRARY_PATH="/workspace/miniconda3/envs/direct3d-s2/lib:${LD_LIBRARY_PATH}"
