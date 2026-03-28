@@ -192,6 +192,7 @@ body { background:linear-gradient(215deg,#101113 0%,#0b0c0d 60%,#0d1014 100%) }
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cached_dir", type=str, default="outputs/web")
+    parser.add_argument("--share", action="store_true", help="Create a public Gradio link")
     args = parser.parse_args()
-    
-    demo.queue().launch(share=True, allowed_paths=[args.cached_dir], server_name="0.0.0.0", server_port=7860)
+
+    demo.queue().launch(share=args.share, allowed_paths=[args.cached_dir], server_name="0.0.0.0", server_port=7860)
